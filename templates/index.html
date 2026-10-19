@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MailSort</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <h1>MailSort</h1>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" id="nav-analyze" onclick="switchView('analyze')">
+                    <span class="nav-icon">✉️</span>
+                    Analyze Email
+                </a>
+                <a href="#" class="nav-item" id="nav-about" onclick="switchView('about')">
+                    <span class="nav-icon">💡</span>
+                    How it works
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <p class="footer-text">Email Priority Classifier</p>
+            </div>
+        </aside>
+
+        <!-- Main content -->
+        <main class="main-content">
+            <header class="top-bar">
+                <h2>Analyze Email Priority</h2>
+            </header>
+
+            <div class="content-area">
+                <!-- Input section -->
+                <div class="input-section">
+                    <label for="email-input" class="input-label">
+                        Paste or type an email below
+                    </label>
+                    <textarea
+                        id="email-input"
+                        class="email-textarea"
+                        placeholder="e.g. Hi team, just a reminder that the project deadline is tomorrow. Please make sure all PRs are merged by end of day..."
+                        rows="8"
+                    ></textarea>
+                    <div class="input-actions">
+                        <span class="char-count" id="char-count">0 characters</span>
+                        <div class="button-group">
+                            <button class="btn btn-secondary" onclick="clearAll()">Clear</button>
+                            <button class="btn btn-primary" id="analyze-btn" onclick="analyze()">
+                                <span class="btn-text">Analyze Priority</span>
+                                <span class="btn-loader" hidden>
+                                    <span class="spinner"></span>
+                                    Analyzing...
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sample emails -->
+                <div class="samples-section" id="samples-section">
+                    <p class="samples-title">Or try a sample email:</p>
+                    <div class="sample-chips">
+                        <button class="chip" onclick="loadSample('urgent')">🔴 Urgent</button>
+                        <button class="chip" onclick="loadSample('important')">⚡ Important</button>
+                        <button class="chip" onclick="loadSample('normal')">📬 Normal</button>
+                        <button class="chip" onclick="loadSample('low')">📋 Low Priority</button>
+                    </div>
+                </div>
+
+                <!-- Results section (hidden by default) -->
+                <div class="results-section" id="results-section" hidden>
+                    <!-- Priority badge -->
+                    <div class="priority-card" id="priority-card">
+                        <div class="priority-main">
+                            <span class="priority-icon" id="priority-icon"></span>
+                            <div class="priority-text">
+                                <span class="priority-label" id="priority-label"></span>
+                                <span class="priority-confidence" id="priority-confidence"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Score breakdown -->
+                    <div class="breakdown-card">
+                        <h3 class="card-title">Score Breakdown</h3>
+                        <div class="breakdown-bars" id="breakdown-bars"></div>
+                    </div>
+
+                    <!-- Key signals -->
+                    <div class="signals-card" id="signals-card" hidden>
+                        <h3 class="card-title">Key Signals Detected</h3>
+                        <div class="signals-list" id="signals-list"></div>
+                    </div>
+                </div>
+
+                <!-- About / How it works (hidden by default) -->
+                <div class="about-section" id="about-section" hidden>
+                    <div class="about-card">
+                        <h3>How it works</h3>
+                        <div class="about-steps">
+                            <div class="step">
+                                <span class="step-num">1</span>
+                                <div>
+                                    <strong>Text Vectorization</strong>
+                                    <p>Your email is converted into numerical features using TF-IDF (Term Frequency-Inverse Document Frequency), capturing the importance of each word.</p>
+                                </div>
+                            </div>
+                            <div class="step">
+                                <span class="step-num">2</span>
+                                <div>
+                                    <strong>Classification</strong>
+                                    <p>A Logistic Regression model trained on labeled email data predicts the priority class based on learned patterns.</p>
+                                </div>
+                            </div>
+                            <div class="step">
+                                <span class="step-num">3</span>
+                                <div>
+                                    <strong>Signal Detection</strong>
+                                    <p>Key phrases and words are highlighted to explain why the model classified the email the way it did.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="about-tech">
+                            <p><strong>Stack:</strong> Python · Flask · scikit-learn · Docker</p>
+                            <p><strong>Model:</strong> Logistic Regression with TF-IDF features (bigrams)</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Error message -->
+                <div class="error-toast" id="error-toast" hidden>
+                    <span id="error-message"></span>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const samples = {
+            urgent: "URGENT: The production server is completely down and all customer-facing services are offline. We're losing revenue every minute. The engineering team needs to drop everything and join the war room immediately. This is a P0 incident — all hands on deck NOW.",
+            important: "Hi team, reminder that the Q3 project proposal is due by end of day tomorrow. Please make sure your sections are complete and reviewed. I need final approval from each team lead before I can submit to the stakeholders on Thursday. Let me know if you have any blockers.",
+            normal: "Hey, just wanted to share the meeting notes from today's standup. I also pushed a small refactor to the utils module — nothing major, just cleaned up some imports. Let me know if you have any questions. I'll be working from home tomorrow, reachable on Slack.",
+            low: "Happy Friday everyone! 🎉 Just a reminder that next week is our annual company picnic at the park. There will be food, games, and live music. Also, the office book club is reading 'Designing Data-Intensive Applications' this month if anyone wants to join. Have a great weekend!"
+        };
+
+        const textarea = document.getElementById('email-input');
+        const charCount = document.getElementById('char-count');
+
+        textarea.addEventListener('input', () => {
+            charCount.textContent = `${textarea.value.length} characters`;
+        });
+
+        function loadSample(type) {
+            textarea.value = samples[type];
+            charCount.textContent = `${textarea.value.length} characters`;
+            textarea.focus();
+        }
+
+        function clearAll() {
+            textarea.value = '';
+            charCount.textContent = '0 characters';
+            document.getElementById('results-section').hidden = true;
+            document.getElementById('samples-section').hidden = false;
+            document.getElementById('error-toast').hidden = true;
+        }
+
+        async function analyze() {
+            const text = textarea.value.trim();
+            if (!text) {
+                showError('Please enter some email text first.');
+                return;
+            }
+
+            const btn = document.getElementById('analyze-btn');
+            const btnText = btn.querySelector('.btn-text');
+            const btnLoader = btn.querySelector('.btn-loader');
+
+            btn.disabled = true;
+            btnText.hidden = true;
+            btnLoader.hidden = false;
+            document.getElementById('error-toast').hidden = true;
+
+            try {
+                const res = await fetch('/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text })
+                });
+
+                const data = await res.json();
+
+                if (!res.ok) {
+                    showError(data.error || 'Something went wrong.');
+                    return;
+                }
+
+                displayResults(data);
+            } catch (err) {
+                showError('Could not connect to the server.');
+            } finally {
+                btn.disabled = false;
+                btnText.hidden = false;
+                btnLoader.hidden = true;
+            }
+        }
+
+        function displayResults(data) {
+            document.getElementById('samples-section').hidden = true;
+            const results = document.getElementById('results-section');
+            results.hidden = false;
+
+            // Priority card
+            const card = document.getElementById('priority-card');
+            card.style.borderLeftColor = data.color;
+            document.getElementById('priority-icon').textContent = data.icon;
+            document.getElementById('priority-label').textContent = data.priority;
+            document.getElementById('priority-confidence').textContent =
+                `${data.confidence}% confidence`;
+
+            // Breakdown bars
+            const barsContainer = document.getElementById('breakdown-bars');
+            barsContainer.innerHTML = '';
+            data.breakdown.forEach(item => {
+                const row = document.createElement('div');
+                row.className = 'bar-row';
+                row.innerHTML = `
+                    <span class="bar-icon">${item.icon}</span>
+                    <span class="bar-label">${item.label}</span>
+                    <div class="bar-track">
+                        <div class="bar-fill" style="width: 0%; background: ${item.color}"></div>
+                    </div>
+                    <span class="bar-value">${item.score}%</span>
+                `;
+                barsContainer.appendChild(row);
+                // Animate bar after append
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        row.querySelector('.bar-fill').style.width = `${item.score}%`;
+                    });
+                });
+            });
+
+            // Signals
+            const signalsCard = document.getElementById('signals-card');
+            const signalsList = document.getElementById('signals-list');
+            if (data.signals && data.signals.length > 0) {
+                signalsCard.hidden = false;
+                signalsList.innerHTML = '';
+                data.signals.forEach(s => {
+                    const tag = document.createElement('span');
+                    tag.className = `signal-tag priority-${s.priority}`;
+                    tag.textContent = s.word;
+                    signalsList.appendChild(tag);
+                });
+            } else {
+                signalsCard.hidden = true;
+            }
+
+            // Smooth scroll to results
+            results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function showError(msg) {
+            const toast = document.getElementById('error-toast');
+            document.getElementById('error-message').textContent = msg;
+            toast.hidden = false;
+            setTimeout(() => { toast.hidden = true; }, 4000);
+        }
+
+        function switchView(view) {
+            const isAbout = view === 'about';
+            document.getElementById('about-section').hidden = !isAbout;
+            // Hide everything except about section if about is active
+            const contentArea = document.querySelector('.content-area');
+            Array.from(contentArea.children).forEach(el => {
+                if (el.id !== 'about-section' && !el.classList.contains('error-toast')) {
+                    el.hidden = isAbout;
+                }
+            });
+
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            document.getElementById(isAbout ? 'nav-about' : 'nav-analyze').classList.add('active');
+        }
+
+        // Allow Ctrl+Enter to submit
+        textarea.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                analyze();
+            }
+        });
+    </script>
+</body>
+</html>
